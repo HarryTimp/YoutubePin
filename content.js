@@ -99,7 +99,28 @@ async function saveToQurate() {
   const qurate = items.find(el => el.getAttribute('aria-label')?.includes('Qurate'));
 
   if (qurate) {
-    qurate.querySelector('.yt-list-item-view-model__layout-wrapper')?.click() || qurate.click();
+    const alreadyAdded = qurate.getAttribute('aria-label')?.toLowerCase().includes('selected') &&
+                         !qurate.getAttribute('aria-label')?.toLowerCase().includes('not selected');
+
+    if (alreadyAdded) {
+      // Close the modal first
+      const closeBtn = document.querySelector('tp-yt-paper-dialog #close-button button, [aria-label="Close"]');
+      if (closeBtn) closeBtn.click();
+      await wait(300);
+
+      const remove = confirm('This video is already Qurated, would you like to remove it?');
+      if (!remove) { if (qurateBtn) qurateBtn.disabled = false; return; }
+
+      // Reopen modal and deselect
+      saveBtn.click();
+      await wait(1500);
+      const refreshedQurate = [...document.querySelectorAll('yt-list-item-view-model[role="listitem"]')]
+        .find(el => el.getAttribute('aria-label')?.includes('Qurate'));
+      refreshedQurate?.querySelector('.yt-list-item-view-model__layout-wrapper')?.click();
+      await wait(400);
+    } else {
+      qurate.querySelector('.yt-list-item-view-model__layout-wrapper')?.click() || qurate.click();
+    }
     await wait(400);
   } else {
     // Create new playlist
@@ -149,12 +170,12 @@ function injectQurateButton() {
   if (document.getElementById('qurate-btn')) return;
   if (!location.pathname.startsWith('/watch')) return;
 
-  const target = document.querySelector('ytd-watch-metadata #top-level-buttons-computed');
-  if (!target) return;
+  const menuRenderer = document.querySelector('ytd-watch-metadata ytd-menu-renderer');
+  if (!menuRenderer) return;
 
   const btn = document.createElement('button');
   btn.id = 'qurate-btn';
-  btn.textContent = '+ Qurate';
+  btn.textContent = '+Qr8';
   btn.style.cssText = `
     background: none;
     border: 1px solid #aaa;
@@ -164,11 +185,11 @@ function injectQurateButton() {
     font-size: 14px;
     font-weight: 500;
     padding: 6px 16px;
-    margin-right: 8px;
-    vertical-align: middle;
+    margin-right: auto;
+    align-self: center;
   `;
   btn.addEventListener('click', saveToQurate);
-  target.insertBefore(btn, target.firstChild);
+  menuRenderer.insertBefore(btn, menuRenderer.firstChild);
 }
 
 function onNavigate() {
