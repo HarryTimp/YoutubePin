@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Pin",
+  "version": "1.0",
+  "description": "Always pins a video as the first YouTube recommendation",
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
