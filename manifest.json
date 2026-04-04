@@ -3,6 +3,12 @@
   "name": "YouTube Pin",
   "version": "1.0",
   "description": "Always pins a video as the first YouTube recommendation",
+  "web_accessible_resources": [
+    {
+      "resources": ["videos.json"],
+      "matches": ["*://www.youtube.com/*"]
+    }
+  ],
   "content_scripts": [
     {
       "matches": ["*://www.youtube.com/*"],

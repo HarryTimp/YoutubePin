@@ -1,10 +1,14 @@
-const PINNED = {
-  id: 'dQw4w9WgXcQ',
-  title: 'Rick Astley - Never Gonna Give You Up (Official Music Video)',
-  channel: 'Rick Astley',
-};
-PINNED.url = 'https://www.youtube.com/watch?v=' + PINNED.id;
-PINNED.thumbnail = 'https://i.ytimg.com/vi/' + PINNED.id + '/mqdefault.jpg';
+let PINNED = null;
+
+fetch(chrome.runtime.getURL('videos.json'))
+  .then(r => r.json())
+  .then(videos => {
+    const OddsEvens = new Date().getMinutes() % 2;
+    PINNED = videos[OddsEvens % videos.length];
+    PINNED.url = 'https://www.youtube.com/watch?v=' + PINNED.id;
+    PINNED.thumbnail = 'https://i.ytimg.com/vi/' + PINNED.id + '/mqdefault.jpg';
+    onNavigate();
+  });
 
 function getItemsList() {
   return document.querySelector(
@@ -26,6 +30,7 @@ function getFirstCard() {
 }
 
 function injectPinned() {
+  if (!PINNED) return;
   if (!location.pathname.startsWith('/watch')) return;
   if (document.getElementById('yt-pinned')) return;
 
@@ -72,12 +77,108 @@ function injectPinned() {
   }
 }
 
+// ── Qurate Button ────────────────────────────────────────────────
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+async function saveToQurate() {
+  const qurateBtn = document.getElementById('qurate-btn');
+  if (qurateBtn) qurateBtn.disabled = true;
+
+  // Open the save modal
+  const saveBtn = [...document.querySelectorAll('button')].find(
+    b => b.getAttribute('aria-label')?.toLowerCase().includes('save')
+  );
+  if (!saveBtn) { alert('Could not find Save button'); if (qurateBtn) qurateBtn.disabled = false; return; }
+  saveBtn.click();
+
+  await wait(1500);
+
+  // Check if Qurate playlist exists
+  const items = [...document.querySelectorAll('yt-list-item-view-model[role="listitem"]')];
+  const qurate = items.find(el => el.getAttribute('aria-label')?.includes('Qurate'));
+
+  if (qurate) {
+    qurate.querySelector('.yt-list-item-view-model__layout-wrapper')?.click() || qurate.click();
+    await wait(400);
+  } else {
+    // Create new playlist
+    const newBtn = [...document.querySelectorAll('button')].find(
+      b => b.textContent.trim().toLowerCase().includes('new playlist')
+    );
+    if (!newBtn) { alert('Could not find New Playlist button'); return; }
+    newBtn.click();
+    await wait(600);
+
+    const textarea = document.querySelector('textarea[placeholder="Choose a title"]');
+    if (textarea) {
+      textarea.focus();
+      textarea.value = 'Qurate';
+      textarea.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      textarea.dispatchEvent(new Event('change', { bubbles: true }));
+      await wait(400);
+
+      // Open visibility dropdown and select Public
+      const dialog = document.querySelector('tp-yt-paper-dialog');
+      const combobox = dialog?.querySelector('[role="combobox"]');
+      if (combobox) {
+        combobox.click();
+        await wait(600);
+        const publicOption = [...document.querySelectorAll('yt-list-item-view-model[role="menuitem"]')].find(
+          el => el.textContent.trim().toLowerCase().startsWith('public')
+        );
+        if (publicOption) publicOption.click();
+        await wait(300);
+      }
+
+      // Click Create only within the dialog
+      const createBtn = dialog?.querySelector('button[aria-label="Create"]');
+      if (createBtn) createBtn.click();
+      await wait(600);
+    }
+  }
+
+  // Close modal
+  const closeBtn = document.querySelector('tp-yt-paper-dialog #close-button button, ytd-add-to-playlist-renderer + * [aria-label="Close"]');
+  if (closeBtn) closeBtn.click();
+
+  if (qurateBtn) qurateBtn.disabled = false;
+}
+
+function injectQurateButton() {
+  if (document.getElementById('qurate-btn')) return;
+  if (!location.pathname.startsWith('/watch')) return;
+
+  const target = document.querySelector('ytd-watch-metadata #top-level-buttons-computed');
+  if (!target) return;
+
+  const btn = document.createElement('button');
+  btn.id = 'qurate-btn';
+  btn.textContent = '+ Qurate';
+  btn.style.cssText = `
+    background: none;
+    border: 1px solid #aaa;
+    border-radius: 18px;
+    color: inherit;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 6px 16px;
+    margin-right: 8px;
+    vertical-align: middle;
+  `;
+  btn.addEventListener('click', saveToQurate);
+  target.insertBefore(btn, target.firstChild);
+}
+
 function onNavigate() {
   document.getElementById('yt-pinned')?.remove();
+  document.getElementById('qurate-btn')?.remove();
   injectPinned();
-  setTimeout(injectPinned, 1000);
-  setTimeout(injectPinned, 2500);
-  setTimeout(injectPinned, 5000);
+  injectQurateButton();
+  setTimeout(() => { injectPinned(); injectQurateButton(); }, 1000);
+  setTimeout(() => { injectPinned(); injectQurateButton(); }, 2500);
+  setTimeout(() => { injectPinned(); injectQurateButton(); }, 5000);
 }
 
 // Handle YouTube SPA navigation
