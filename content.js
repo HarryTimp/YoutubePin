@@ -30,15 +30,45 @@ async function syncSubscriptions() {
   });
 }
 
-fetch(chrome.runtime.getURL('videos.json'))
-  .then(r => r.json())
-  .then(videos => {
-    const OddsEvens = new Date().getMinutes() % 2;
-    PINNED = videos[OddsEvens % videos.length];
-    PINNED.url = 'https://www.youtube.com/watch?v=' + PINNED.id;
-    PINNED.thumbnail = 'https://i.ytimg.com/vi/' + PINNED.id + '/mqdefault.jpg';
-    onNavigate();
-  });
+chrome.storage.local.get('qr8_user', ({ qr8_user }) => {
+  const user = qr8_user || 'hetimperley';
+  fetch(`${QR8_SERVER}/feed?user=${user}`)
+    .then(r => r.json())
+    .then(feed => {
+      if (feed && feed.length > 0) {
+        // Use the most recently added video from the feed
+        const video = feed[0];
+        PINNED = {
+          id: video.video_id,
+          title: video.title,
+          channel: video.curated_by || video.channel,
+          url: 'https://www.youtube.com/watch?v=' + video.video_id,
+          thumbnail: 'https://i.ytimg.com/vi/' + video.video_id + '/mqdefault.jpg'
+        };
+      } else {
+        // Fallback to videos.json if feed is empty
+        fetch(chrome.runtime.getURL('videos.json'))
+          .then(r => r.json())
+          .then(videos => {
+            const OddsEvens = new Date().getMinutes() % 2;
+            const v = videos[OddsEvens % videos.length];
+            PINNED = { ...v, url: 'https://www.youtube.com/watch?v=' + v.id, thumbnail: 'https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg' };
+          });
+      }
+      onNavigate();
+    })
+    .catch(() => {
+      // Fallback to videos.json on error
+      fetch(chrome.runtime.getURL('videos.json'))
+        .then(r => r.json())
+        .then(videos => {
+          const OddsEvens = new Date().getMinutes() % 2;
+          const v = videos[OddsEvens % videos.length];
+          PINNED = { ...v, url: 'https://www.youtube.com/watch?v=' + v.id, thumbnail: 'https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg' };
+          onNavigate();
+        });
+    });
+});
 
 function getItemsList() {
   return document.querySelector(
