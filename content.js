@@ -183,7 +183,7 @@ function injectQurateButton() {
     color: inherit;
     cursor: pointer;
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 700;
     padding: 6px 16px;
     margin-right: auto;
     align-self: center;
