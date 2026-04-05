@@ -114,6 +114,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 async function saveToQurate() {
   const qurateBtn = document.getElementById('qurate-btn');
   if (qurateBtn) qurateBtn.disabled = true;
+  let wasRemoved = false;
 
   // Open the save modal
   const saveBtn = [...document.querySelectorAll('button')].find(
@@ -140,6 +141,7 @@ async function saveToQurate() {
 
       const remove = confirm('This video is already Qurated, would you like to remove it?');
       if (!remove) { if (qurateBtn) qurateBtn.disabled = false; return; }
+      wasRemoved = true;
 
       // Reopen modal and deselect
       saveBtn.click();
@@ -198,18 +200,14 @@ async function saveToQurate() {
     const videoId = new URLSearchParams(location.search).get('v');
     const title = document.querySelector('h1.ytd-watch-metadata')?.textContent?.trim() || '';
     const channel = document.querySelector('ytd-channel-name #text')?.textContent?.trim() || '';
-    const alreadyAdded = qurate && qurate.getAttribute('aria-label')?.toLowerCase().includes('selected') &&
-                         !qurate.getAttribute('aria-label')?.toLowerCase().includes('not selected');
     if (videoId) {
-      if (qurate && alreadyAdded) {
-        // Was removed
+      if (wasRemoved) {
         fetch(`${QR8_SERVER}/playlist`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user: QR8_USER, video_id: videoId })
         });
       } else {
-        // Was added
         fetch(`${QR8_SERVER}/playlist`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
