@@ -32,7 +32,7 @@ async function syncSubscriptions() {
 
 chrome.storage.local.get('qr8_user', ({ qr8_user }) => {
   const user = qr8_user || 'hetimperley';
-  fetch(`${QR8_SERVER}/feed?user=${user}`)
+  fetch(`${QR8_SERVER}/curated?user=${user}`)
     .then(r => r.json())
     .then(feed => {
       if (feed && feed.length > 0) {
@@ -232,13 +232,13 @@ async function saveToQurate() {
     const channel = document.querySelector('ytd-channel-name #text')?.textContent?.trim() || '';
     if (videoId) {
       if (wasRemoved) {
-        fetch(`${QR8_SERVER}/playlist`, {
+        fetch(`${QR8_SERVER}/curator`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user: QR8_USER, video_id: videoId })
         });
       } else {
-        fetch(`${QR8_SERVER}/playlist`, {
+        fetch(`${QR8_SERVER}/curator`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user: QR8_USER, video_id: videoId, title, channel })
