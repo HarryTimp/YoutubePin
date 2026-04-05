@@ -21,7 +21,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } while (pageToken);
 
         // Send to Qr8 server
-        await fetch('http://204.168.190.47:3000/subscriptions/bulk', {
+        await fetch('https://qur-8.com/subscriptions/bulk', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user: msg.user, subscribe_to: subs })

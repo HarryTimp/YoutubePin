@@ -1,7 +1,7 @@
 let PINNED = null;
 let QR8_USER = null;
 
-const QR8_SERVER = 'http://204.168.190.47:3000';
+const QR8_SERVER = 'https://qur-8.com';
 
 // Get or prompt for username, then boot the extension
 chrome.storage.local.get('qr8_user', ({ qr8_user }) => {

@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "Always pins a video as the first YouTube recommendation",
   "permissions": ["storage", "identity"],
-  "host_permissions": ["http://204.168.190.47:3000/*"],
+  "host_permissions": ["https://qur-8.com/*"],
   "background": {
     "service_worker": "background.js"
   },
