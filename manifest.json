@@ -3,6 +3,15 @@
   "name": "YouTube Pin",
   "version": "1.0",
   "description": "Always pins a video as the first YouTube recommendation",
+  "permissions": ["storage", "identity"],
+  "host_permissions": ["http://204.168.190.47:3000/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "oauth2": {
+    "client_id": "30247318055-glh9i09aql9hiomia2rt8jqi2o2iu0a9.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/youtube.readonly"]
+  },
   "web_accessible_resources": [
     {
       "resources": ["videos.json"],

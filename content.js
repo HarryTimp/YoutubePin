@@ -1,4 +1,34 @@
 let PINNED = null;
+let QR8_USER = null;
+
+const QR8_SERVER = 'http://204.168.190.47:3000';
+
+// Get or prompt for username, then boot the extension
+chrome.storage.local.get('qr8_user', ({ qr8_user }) => {
+  if (qr8_user) {
+    QR8_USER = qr8_user;
+  } else {
+    const name = prompt('Welcome to Qr8! Enter your username:');
+    if (name && name.trim()) {
+      QR8_USER = name.trim();
+      chrome.storage.local.set({ qr8_user: QR8_USER });
+    }
+  }
+  syncSubscriptions();
+});
+
+// ── Sync YouTube subscriptions to Qr8 server ──────────────────────
+
+async function syncSubscriptions() {
+  if (!QR8_USER) return;
+  chrome.runtime.sendMessage({ type: 'SYNC_SUBSCRIPTIONS', user: QR8_USER }, (response) => {
+    if (response?.error) {
+      console.error('Qr8 sync failed:', response.error);
+    } else if (response?.ok) {
+      console.log(`Qr8: synced ${response.count} subscriptions`);
+    }
+  });
+}
 
 fetch(chrome.runtime.getURL('videos.json'))
   .then(r => r.json())
@@ -162,6 +192,32 @@ async function saveToQurate() {
   // Close modal
   const closeBtn = document.querySelector('tp-yt-paper-dialog #close-button button, ytd-add-to-playlist-renderer + * [aria-label="Close"]');
   if (closeBtn) closeBtn.click();
+
+  // Sync to Qr8 server
+  if (QR8_USER) {
+    const videoId = new URLSearchParams(location.search).get('v');
+    const title = document.querySelector('h1.ytd-watch-metadata')?.textContent?.trim() || '';
+    const channel = document.querySelector('ytd-channel-name #text')?.textContent?.trim() || '';
+    const alreadyAdded = qurate && qurate.getAttribute('aria-label')?.toLowerCase().includes('selected') &&
+                         !qurate.getAttribute('aria-label')?.toLowerCase().includes('not selected');
+    if (videoId) {
+      if (qurate && alreadyAdded) {
+        // Was removed
+        fetch(`${QR8_SERVER}/playlist`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: QR8_USER, video_id: videoId })
+        });
+      } else {
+        // Was added
+        fetch(`${QR8_SERVER}/playlist`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: QR8_USER, video_id: videoId, title, channel })
+        });
+      }
+    }
+  }
 
   if (qurateBtn) qurateBtn.disabled = false;
 }
