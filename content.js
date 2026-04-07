@@ -1,140 +1,106 @@
-let PINNED = null;
 let QR8_USER = null;
-
+let QR8_AVATAR = null;
 const QR8_SERVER = 'https://qur-8.com';
 
-// Get or prompt for username, then boot the extension
-chrome.storage.local.get('qr8_user', ({ qr8_user }) => {
+console.log('Qr8: content.js loaded');
+
+// ── Inject fetch interceptor into page context immediately ──────────
+(function injectFetchInterceptor() {
+  console.log('Qr8: injecting fetch interceptor');
+  const script = document.createElement('script');
+  script.src = chrome.runtime.getURL('injected.js');
+  (document.head || document.documentElement).appendChild(script);
+  script.remove();
+  console.log('Qr8: injected.js appended to DOM');
+})();
+
+function setPinned(video) {
+  console.log('Qr8: setPinned called —', video?.title);
+  window.postMessage({ type: 'QR8_SET_PINNED', pinned: video }, '*');
+}
+
+// Wait for injected.js to be ready, then seed PINNED from cache
+window.addEventListener('qr8_injected_ready', () => {
+  console.log('Qr8: injected.js ready signal received');
+  chrome.storage.local.get('qr8_feed', ({ qr8_feed }) => {
+    console.log('Qr8: cache seed — qr8_feed length:', qr8_feed?.length ?? 'null');
+    if (qr8_feed && qr8_feed.length > 0) {
+      const v = qr8_feed[0];
+      console.log('Qr8: seeding PINNED from cache —', v.title);
+      setPinned({
+        id: v.video_id,
+        title: v.title,
+        channel: v.curated_by || v.channel,
+        thumbnail: 'https://i.ytimg.com/vi/' + v.video_id + '/mqdefault.jpg'
+      });
+    } else {
+      console.warn('Qr8: no cached feed to seed from');
+    }
+  });
+});
+
+// ── Username setup ──────────────────────────────────────────────────
+chrome.storage.local.get(['qr8_user', 'qr8_avatar'], ({ qr8_user, qr8_avatar }) => {
+  console.log('Qr8: username from storage —', qr8_user ?? 'none');
+  QR8_AVATAR = qr8_avatar || null;
   if (qr8_user) {
     QR8_USER = qr8_user;
+    console.log('Qr8: QR8_USER set to', QR8_USER);
   } else {
     const name = prompt('Welcome to Qr8! Enter your username:');
     if (name && name.trim()) {
       QR8_USER = name.trim();
       chrome.storage.local.set({ qr8_user: QR8_USER });
+      console.log('Qr8: QR8_USER set from prompt —', QR8_USER);
     }
   }
-  syncSubscriptions();
+  syncFeed();
 });
 
-// ── Sync YouTube subscriptions to Qr8 server ──────────────────────
-
-async function syncSubscriptions() {
-  if (!QR8_USER) return;
-  chrome.runtime.sendMessage({ type: 'SYNC_SUBSCRIPTIONS', user: QR8_USER }, (response) => {
-    if (response?.error) {
-      console.error('Qr8 sync failed:', response.error);
-    } else if (response?.ok) {
-      console.log(`Qr8: synced ${response.count} subscriptions`);
-    }
-  });
+async function checkForAccountSwitch() {
+  // Disabled — was causing page freezes when DevTools open
 }
 
-chrome.storage.local.get('qr8_user', ({ qr8_user }) => {
-  const user = qr8_user || 'hetimperley';
-  fetch(`${QR8_SERVER}/curated?user=${user}`)
-    .then(r => r.json())
-    .then(feed => {
-      if (feed && feed.length > 0) {
-        // Use the most recently added video from the feed
-        const video = feed[0];
-        PINNED = {
-          id: video.video_id,
-          title: video.title,
-          channel: video.curated_by || video.channel,
-          url: 'https://www.youtube.com/watch?v=' + video.video_id,
-          thumbnail: 'https://i.ytimg.com/vi/' + video.video_id + '/mqdefault.jpg'
-        };
-      } else {
-        // Fallback to videos.json if feed is empty
-        fetch(chrome.runtime.getURL('videos.json'))
-          .then(r => r.json())
-          .then(videos => {
-            const OddsEvens = new Date().getMinutes() % 2;
-            const v = videos[OddsEvens % videos.length];
-            PINNED = { ...v, url: 'https://www.youtube.com/watch?v=' + v.id, thumbnail: 'https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg' };
-          });
+// ── Load feed from local storage and set PINNED ──────────────────────
+let QR8_FEED = [];
+
+function syncFeed() {
+  console.log('Qr8: syncFeed called, QR8_USER =', QR8_USER);
+  chrome.storage.local.get('qr8_feed', ({ qr8_feed }) => {
+    console.log('Qr8: syncFeed — qr8_feed length:', qr8_feed?.length ?? 'null');
+    if (qr8_feed && qr8_feed.length > 0) {
+      QR8_FEED = qr8_feed;
+      console.log('Qr8: feed loaded, first video —', qr8_feed[0].title);
+      setPinned({
+        id: qr8_feed[0].video_id,
+        title: qr8_feed[0].title,
+        channel: qr8_feed[0].curated_by || qr8_feed[0].channel,
+        thumbnail: 'https://i.ytimg.com/vi/' + qr8_feed[0].video_id + '/mqdefault.jpg'
+      });
+    } else {
+      if (!qr8_feed) {
+        console.warn('Qr8: no feed found in storage — has a server sync been run?');
+      } else if (qr8_feed.length === 0) {
+        console.warn('Qr8: feed is empty — no curated videos for this user yet');
       }
-      onNavigate();
-    })
-    .catch(() => {
-      // Fallback to videos.json on error
-      fetch(chrome.runtime.getURL('videos.json'))
-        .then(r => r.json())
-        .then(videos => {
-          const OddsEvens = new Date().getMinutes() % 2;
-          const v = videos[OddsEvens % videos.length];
-          PINNED = { ...v, url: 'https://www.youtube.com/watch?v=' + v.id, thumbnail: 'https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg' };
-          onNavigate();
-        });
-    });
-});
-
-function getItemsList() {
-  return document.querySelector(
-    'ytd-watch-next-secondary-results-renderer ytd-item-section-renderer #contents'
-  );
-}
-
-function getFirstCard() {
-  const items = getItemsList();
-  if (!items) return null;
-  const cards = items.querySelectorAll(
-    'ytd-compact-video-renderer, yt-lockup-view-model, ytd-compact-autoplay-renderer'
-  );
-  for (const card of cards) {
-    const img = card.querySelector('img');
-    if (img && img.src && img.src.startsWith('http')) return card;
-  }
-  return cards[0] || null;
-}
-
-function injectPinned() {
-  if (!PINNED) return;
-  if (!location.pathname.startsWith('/watch')) return;
-  if (document.getElementById('yt-pinned')) return;
-
-  const firstCard = getFirstCard();
-  if (!firstCard) return;
-
-  const clone = firstCard.cloneNode(true);
-  clone.id = 'yt-pinned';
-
-  // Update all links
-  clone.querySelectorAll('a').forEach(a => a.href = PINNED.url);
-
-  // Update thumbnail
-  clone.querySelectorAll('img').forEach(img => {
-    img.src = PINNED.thumbnail;
-    img.srcset = '';
-    img.removeAttribute('data-src');
-    img.removeAttribute('loading');
-    img.setAttribute('src', PINNED.thumbnail);
+      console.log('Qr8: falling back to videos.json');
+      loadFallback();
+    }
   });
+}
 
-  // Update title
-  const titleH3 = clone.querySelector('h3.yt-lockup-metadata-view-model__heading-reset');
-  if (titleH3) titleH3.setAttribute('title', PINNED.title);
-  const titleLink = clone.querySelector('a.yt-lockup-metadata-view-model__title');
-  if (titleLink) titleLink.setAttribute('aria-label', PINNED.title);
-  const titleSpan = clone.querySelector('a.yt-lockup-metadata-view-model__title span');
-  if (titleSpan) titleSpan.textContent = PINNED.title;
-
-  // Update channel name
-  const metaSpans = clone.querySelectorAll('.ytContentMetadataViewModelMetadataRow span.yt-core-attributed-string');
-  if (metaSpans[0]) metaSpans[0].textContent = PINNED.channel;
-
-  firstCard.parentNode.insertBefore(clone, firstCard);
-
-  // Replace thumbnail container with a plain img YouTube can't override
-  const thumbContainer = clone.querySelector('.ytThumbnailViewModelImage');
-  if (thumbContainer) {
-    const plainImg = document.createElement('img');
-    plainImg.src = PINNED.thumbnail;
-    plainImg.style.cssText = 'width:100%;height:100%;object-fit:cover;';
-    thumbContainer.innerHTML = '';
-    thumbContainer.appendChild(plainImg);
-  }
+function loadFallback() {
+  console.log('Qr8: loadFallback called');
+  fetch(chrome.runtime.getURL('videos.json'))
+    .then(r => r.json())
+    .then(videos => {
+      const v = videos[new Date().getMinutes() % videos.length];
+      console.log('Qr8: fallback video —', v.title);
+      setPinned({
+        ...v,
+        thumbnail: 'https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg'
+      });
+    });
 }
 
 // ── Qurate Button ────────────────────────────────────────────────
@@ -142,9 +108,12 @@ function injectPinned() {
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 async function saveToQurate() {
+  console.log('Qr8: saveToQurate called, QR8_USER =', QR8_USER);
   const qurateBtn = document.getElementById('qurate-btn');
   if (qurateBtn) qurateBtn.disabled = true;
   let wasRemoved = false;
+
+  await checkForAccountSwitch();
 
   // Open the save modal
   const saveBtn = [...document.querySelectorAll('button')].find(
@@ -158,13 +127,13 @@ async function saveToQurate() {
   // Check if Qurate playlist exists
   const items = [...document.querySelectorAll('yt-list-item-view-model[role="listitem"]')];
   const qurate = items.find(el => el.getAttribute('aria-label')?.includes('Qurate'));
+  console.log('Qr8: Qurate playlist found in modal —', !!qurate);
 
   if (qurate) {
     const alreadyAdded = qurate.getAttribute('aria-label')?.toLowerCase().includes('selected') &&
                          !qurate.getAttribute('aria-label')?.toLowerCase().includes('not selected');
 
     if (alreadyAdded) {
-      // Close the modal first
       const closeBtn = document.querySelector('tp-yt-paper-dialog #close-button button, [aria-label="Close"]');
       if (closeBtn) closeBtn.click();
       await wait(300);
@@ -173,7 +142,6 @@ async function saveToQurate() {
       if (!remove) { if (qurateBtn) qurateBtn.disabled = false; return; }
       wasRemoved = true;
 
-      // Reopen modal and deselect
       saveBtn.click();
       await wait(1500);
       const refreshedQurate = [...document.querySelectorAll('yt-list-item-view-model[role="listitem"]')]
@@ -185,7 +153,6 @@ async function saveToQurate() {
     }
     await wait(400);
   } else {
-    // Create new playlist
     const newBtn = [...document.querySelectorAll('button')].find(
       b => b.textContent.trim().toLowerCase().includes('new playlist')
     );
@@ -201,7 +168,6 @@ async function saveToQurate() {
       textarea.dispatchEvent(new Event('change', { bubbles: true }));
       await wait(400);
 
-      // Open visibility dropdown and select Public
       const dialog = document.querySelector('tp-yt-paper-dialog');
       const combobox = dialog?.querySelector('[role="combobox"]');
       if (combobox) {
@@ -214,22 +180,20 @@ async function saveToQurate() {
         await wait(300);
       }
 
-      // Click Create only within the dialog
       const createBtn = dialog?.querySelector('button[aria-label="Create"]');
       if (createBtn) createBtn.click();
       await wait(600);
     }
   }
 
-  // Close modal
   const closeBtn = document.querySelector('tp-yt-paper-dialog #close-button button, ytd-add-to-playlist-renderer + * [aria-label="Close"]');
   if (closeBtn) closeBtn.click();
 
-  // Sync to Qr8 server
   if (QR8_USER) {
     const videoId = new URLSearchParams(location.search).get('v');
     const title = document.querySelector('h1.ytd-watch-metadata')?.textContent?.trim() || '';
     const channel = document.querySelector('ytd-channel-name #text')?.textContent?.trim() || '';
+    console.log('Qr8: syncing to server — user:', QR8_USER, 'videoId:', videoId, 'removed:', wasRemoved);
     if (videoId) {
       if (wasRemoved) {
         fetch(`${QR8_SERVER}/curator`, {
@@ -255,38 +219,124 @@ function injectQurateButton() {
   if (!location.pathname.startsWith('/watch')) return;
 
   const menuRenderer = document.querySelector('ytd-watch-metadata ytd-menu-renderer');
-  if (!menuRenderer) return;
+  if (!menuRenderer) { console.log('Qr8: injectQurateButton — menuRenderer not found'); return; }
 
+  console.log('Qr8: injecting +Qr8 button');
   const btn = document.createElement('button');
   btn.id = 'qurate-btn';
   btn.textContent = '+Qr8';
   btn.style.cssText = `
-    background: none;
-    border: 1px solid #aaa;
+    background: repeating-linear-gradient(
+      100deg,
+      #c8a96e 0px, #b8935a 2px, #d4b483 4px, #c09060 6px,
+      #bb8c58 8px, #cfa872 10px, #c8a96e 12px
+    );
+    border: 1px solid #7a5c2e;
     border-radius: 18px;
-    color: inherit;
+    color: #ffffff;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 17px;
     font-weight: 700;
-    padding: 6px 16px;
+    padding: 7px 19px;
+    align-self: center;
+    margin-left: 8px;
+  `;
+  btn.addEventListener('click', saveToQurate);
+  const subBtn = document.getElementById('qr8-subscribe-btn');
+  if (subBtn) {
+    subBtn.insertAdjacentElement('afterend', btn);
+  } else {
+    menuRenderer.insertBefore(btn, menuRenderer.firstChild);
+  }
+}
+
+function injectSubscribeButton() {
+  if (document.getElementById('qr8-subscribe-btn')) return;
+  if (!location.pathname.startsWith('/watch')) return;
+
+  const menuRenderer = document.querySelector('ytd-watch-metadata ytd-menu-renderer');
+  if (!menuRenderer) { console.log('Qr8: injectSubscribeButton — menuRenderer not found'); return; }
+
+  console.log('Qr8: injecting Follow Curator button');
+  const btn = document.createElement('button');
+  btn.id = 'qr8-subscribe-btn';
+  btn.textContent = 'Follow Curator';
+  btn.style.cssText = `
+    background: repeating-linear-gradient(
+      100deg,
+      #c8a96e 0px, #b8935a 2px, #d4b483 4px, #c09060 6px,
+      #bb8c58 8px, #cfa872 10px, #c8a96e 12px
+    );
+    border: 1px solid #7a5c2e;
+    border-radius: 18px;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 7px 19px;
     margin-right: auto;
     align-self: center;
   `;
-  btn.addEventListener('click', saveToQurate);
+  btn.addEventListener('click', followCurator);
   menuRenderer.insertBefore(btn, menuRenderer.firstChild);
 }
 
-function onNavigate() {
-  document.getElementById('yt-pinned')?.remove();
-  document.getElementById('qurate-btn')?.remove();
-  injectPinned();
-  injectQurateButton();
-  setTimeout(() => { injectPinned(); injectQurateButton(); }, 1000);
-  setTimeout(() => { injectPinned(); injectQurateButton(); }, 2500);
-  setTimeout(() => { injectPinned(); injectQurateButton(); }, 5000);
+async function followCurator() {
+  console.log('Qr8: followCurator called, QR8_USER =', QR8_USER);
+  if (!QR8_USER) { alert('No Qr8 username set. Reload the page to set one.'); return; }
+
+  const channel = document.querySelector('ytd-channel-name #text')?.textContent?.trim();
+  console.log('Qr8: channel detected —', channel);
+  if (!channel) { alert('Could not find channel name.'); return; }
+
+  const btn = document.getElementById('qr8-subscribe-btn');
+  if (btn) btn.disabled = true;
+
+  try {
+    const checkRes = await fetch(`${QR8_SERVER}/subscriptions?user=${encodeURIComponent(QR8_USER)}`);
+    if (checkRes.ok) {
+      const subs = await checkRes.json();
+      console.log('Qr8: current subscriptions —', subs.map(s => s.curator));
+      if (subs.find(s => s.curator === channel)) {
+        alert(`You are already following curator: ${channel}`);
+        if (btn) btn.disabled = false;
+        return;
+      }
+    }
+
+    const res = await fetch(`${QR8_SERVER}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: QR8_USER, curator: channel })
+    });
+    console.log('Qr8: subscribe response —', res.status);
+    if (res.ok) {
+      alert(`Now following curator: ${channel}`);
+    } else {
+      alert(`Failed to follow ${channel}. Try again.`);
+    }
+  } catch (e) {
+    console.error('Qr8: followCurator error —', e.message);
+    alert('Could not reach Qr8 server.');
+  }
+
+  if (btn) btn.disabled = false;
 }
 
-// Handle YouTube SPA navigation
+async function onNavigate() {
+  console.log('Qr8: onNavigate fired —', location.pathname);
+  document.getElementById('qurate-btn')?.remove();
+  document.getElementById('qr8-subscribe-btn')?.remove();
+  injectSubscribeButton();
+  injectQurateButton();
+  setTimeout(() => { injectSubscribeButton(); injectQurateButton(); }, 1000);
+  setTimeout(() => { injectSubscribeButton(); injectQurateButton(); }, 2500);
+  setTimeout(() => { injectSubscribeButton(); injectQurateButton(); }, 5000);
+
+  await checkForAccountSwitch();
+}
+
+// ── Handle YouTube SPA navigation ──────────────────────────────────
 window.addEventListener('yt-navigate-finish', onNavigate, true);
 document.addEventListener('yt-navigate-finish', onNavigate, true);
 
@@ -300,4 +350,5 @@ new MutationObserver(() => {
 }).observe(document.body, { childList: true, subtree: true });
 
 // Initial run
+console.log('Qr8: initial onNavigate');
 onNavigate();

@@ -1,4 +1,10 @@
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'GET_EMAIL') {
+    chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }, (info) => {
+      sendResponse({ email: info?.email || null });
+    });
+    return true;
+  }
   if (msg.type === 'SYNC_SUBSCRIPTIONS') {
     chrome.identity.getAuthToken({ interactive: true }, async (token) => {
       if (chrome.runtime.lastError || !token) {
