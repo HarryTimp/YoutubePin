@@ -7,19 +7,9 @@ const QR8_SERVER = 'https://qur-8.com';
 console.log('Qr8: content.js loaded');
 
 // ── Username setup ──────────────────────────────────────────────────
-chrome.storage.local.get(['qr8_user', 'qr8_avatar', 'qr8_feed'], ({ qr8_user, qr8_avatar, qr8_feed }) => {
-  QR8_AVATAR = qr8_avatar || null;
 
-  if (qr8_user) {
-    QR8_USER = qr8_user;
-  } else {
-    const name = prompt('Welcome to Qr8! Enter your username:');
-    if (name && name.trim()) {
-      QR8_USER = name.trim();
-      chrome.storage.local.set({ qr8_user: QR8_USER });
-    }
-  }
-
+function initFeed(qr8_feed) {
+  console.log('Qr8: initFeed — entries:', qr8_feed?.length ?? 0);
   if (qr8_feed && qr8_feed.length > 0) {
     const v = qr8_feed[0];
     QR8_PINNED = {
@@ -30,8 +20,74 @@ chrome.storage.local.get(['qr8_user', 'qr8_avatar', 'qr8_feed'], ({ qr8_user, qr
     };
     console.log('Qr8: PINNED set from cache —', QR8_PINNED.title);
   } else {
+    console.log('Qr8: initFeed — no cache, loading fallback');
     loadFallback();
   }
+}
+
+async function fetchFeed(user) {
+  const url = `${QR8_SERVER}/curated?user=${encodeURIComponent(user)}`;
+  console.log('Qr8: fetchFeed — requesting', url);
+  try {
+    const res = await fetch(url);
+    console.log('Qr8: fetchFeed — status', res.status);
+    if (!res.ok) { console.log('Qr8: fetchFeed — bad response, aborting'); return; }
+    const feed = await res.json();
+    console.log('Qr8: fetchFeed — received', feed.length, 'videos');
+    if (!Array.isArray(feed) || feed.length === 0) { console.log('Qr8: fetchFeed — empty feed'); return; }
+    chrome.storage.local.set({ qr8_feed: feed });
+    const v = feed[0];
+    QR8_PINNED = {
+      id: v.video_id,
+      title: v.title,
+      channel: v.curated_by || v.channel,
+      thumbnail: 'https://i.ytimg.com/vi/' + v.video_id + '/mqdefault.jpg'
+    };
+    console.log('Qr8: feed loaded from server —', QR8_PINNED.title);
+    injectPinnedCard();
+  } catch (e) {
+    console.log('Qr8: fetchFeed error —', e.message);
+  }
+}
+
+function setUser(name) {
+  if (!name) { console.log('Qr8: setUser — called with empty name, skipping'); return; }
+  if (QR8_USER === name) { console.log('Qr8: setUser — same user, no change'); return; }
+  if (QR8_USER && QR8_USER !== name) {
+    console.log('Qr8: account changed from', QR8_USER, '→', name);
+    chrome.storage.local.remove('qr8_feed');
+  }
+  QR8_USER = name;
+  chrome.storage.local.set({ qr8_user: name });
+  console.log('Qr8: username set —', name);
+  fetchFeed(name);
+}
+
+function resolveAccountName(attempt = 1) {
+  console.log('Qr8: resolveAccountName — attempt', attempt);
+  chrome.runtime.sendMessage({ type: 'GET_ACCOUNT_NAME' }, (res) => {
+    if (chrome.runtime.lastError) {
+      console.log('Qr8: resolveAccountName — message error:', chrome.runtime.lastError.message);
+      return;
+    }
+    console.log('Qr8: resolveAccountName — response:', JSON.stringify(res));
+    if (res?.name) {
+      setUser(res.name);
+    } else if (attempt < 5) {
+      console.log('Qr8: resolveAccountName — no name yet, retrying in 2s');
+      setTimeout(() => resolveAccountName(attempt + 1), 2000);
+    } else {
+      console.log('Qr8: resolveAccountName — gave up after', attempt, 'attempts');
+    }
+  });
+}
+
+chrome.storage.local.get(['qr8_user', 'qr8_feed'], ({ qr8_user, qr8_feed }) => {
+  console.log('Qr8: storage loaded — qr8_user:', qr8_user, '| feed entries:', qr8_feed?.length ?? 0);
+  if (qr8_user) QR8_USER = qr8_user;
+
+  initFeed(qr8_feed);
+  resolveAccountName();
 });
 
 function loadFallback() {
@@ -206,7 +262,12 @@ async function saveToQurate() {
   if (QR8_USER) {
     const videoId = new URLSearchParams(location.search).get('v');
     const title = document.querySelector('h1.ytd-watch-metadata')?.textContent?.trim() || '';
-    const channel = document.querySelector('ytd-channel-name #text')?.textContent?.trim() || '';
+    const channel = (
+      document.querySelector('ytd-channel-name #text') ||
+      document.querySelector('ytd-channel-name yt-formatted-string') ||
+      document.querySelector('#owner #channel-name a') ||
+      document.querySelector('ytd-video-owner-renderer #channel-name a')
+    )?.textContent?.trim() || '';
     if (videoId) {
       if (wasRemoved) {
         fetch(`${QR8_SERVER}/curator`, {
@@ -269,7 +330,12 @@ function injectSubscribeButton() {
 
 async function followCurator() {
   if (!QR8_USER) { alert('No Qr8 username set. Reload the page to set one.'); return; }
-  const channel = document.querySelector('ytd-channel-name #text')?.textContent?.trim();
+  const channel = (
+    document.querySelector('ytd-channel-name #text') ||
+    document.querySelector('ytd-channel-name yt-formatted-string') ||
+    document.querySelector('#owner #channel-name a') ||
+    document.querySelector('ytd-video-owner-renderer #channel-name a')
+  )?.textContent?.trim();
   if (!channel) { alert('Could not find channel name.'); return; }
   const btn = document.getElementById('qr8-subscribe-btn');
   if (btn) btn.disabled = true;
@@ -303,6 +369,8 @@ async function onNavigate() {
   document.getElementById('qurate-btn')?.remove();
   document.getElementById('qr8-subscribe-btn')?.remove();
   document.getElementById('qr8-pinned-card')?.remove();
+
+  if (QR8_USER) fetchFeed(QR8_USER);
 
   injectSubscribeButton();
   injectQurateButton();

@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmjsYRjWNhsNKh8KiXHlVimyCXo/gK54HGiZrqld47LfXnhLW+ZOoMURBZyzC2wN3gtnvliTc4gNYn6ACI9JlkaHqKOZXNT3SnUMyWjBWforulHb/m0LrSnVN+3J6ZcJfOc83wRuporDtI42MBcDVuuYlIPHlHMIabU+eTogmIqvIS/TEIHF/J7aXh8z186puxPpbsgn4uiPeBHc4Df6wdt9n01ka1rmsoDW+x7hpf9ZYUvqPNBDsPt+xjW/rMqqMtLVU2HSunWYeRB35gKFhasYmVCdjRi6bdsxMkIEhaYIa2lGq42FHf3g6wQtDGo46+liyj6sUiBZIrcTx18WlkwIDAQAB",
   "name": "YouTube Pin",
-  "version": "1.129",
+  "version": "1.139",
   "description": "Always pins a video as the first YouTube recommendation",
-  "permissions": ["storage", "identity"],
-  "host_permissions": ["https://qur-8.com/*"],
+  "permissions": ["storage", "identity", "scripting"],
+  "host_permissions": ["https://qur-8.com/*", "https://www.youtube.com/*"],
   "background": {
     "service_worker": "background.js"
   },
